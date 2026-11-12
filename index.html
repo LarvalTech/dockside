@@ -277,8 +277,11 @@ const BRAIN_URL = "https://bdaib-hub.pages.dev/brain/chat";
 
 const DEAL_HINT = "A special deal may be available, ask at the service desk";
 
+const OUT_OF_SCOPE_REPLY = "Sorry, I don't know the answer to that question. Is there something else I can help with about our activities, pricing, available places or the likelihood of a session going ahead?";
+
 const SYSTEM = `You are Ask Dockside, the warm, friendly customer assistant for Dockside Paddle Co. at Grand Canal Dock, Dublin.
-Answer ONLY from the TODAY'S SESSIONS and WEATHER data in the user message. Never answer from memory or guess. If the data does not contain the answer, say you don't know and suggest asking staff at the service desk.
+Answer ONLY from the TODAY'S SESSIONS and WEATHER data in the user message. Never answer from memory or guess. Answer only what the customer actually asked. Do not add extra information they didn't ask for, and never guess their next question.
+Out of scope: you can only help with activities, pricing, places available, session times and the likelihood of sessions going ahead (plus the weather for those). If the customer's message cannot be answered from the data (for example food, parking, changing rooms, directions, or anything unrelated), reply with exactly the single word OUT_OF_SCOPE and nothing else. If only part of the question can be answered, answer that part and add one short sentence saying you don't know the other part. Never use the word OUT_OF_SCOPE in that case. Never write the labels "GO-AHEAD CHANCE" or "WIND CHECK" to the customer; say things like "about 86% likely to go ahead".
 Tone: upbeat, welcoming and concise, like a helpful member of the dock team. Use at most one emoji per reply.
 Conversation: earlier messages are the customer's previous questions and your replies. Use them to understand follow-ups (e.g. "how much is it?" or "what about the wind?" refers to the session just discussed; if several were discussed or it is unclear, ask which one). Earlier replies may be out of date, so always take prices, places, times and weather from the data in the LATEST user message only.
 Rules:
@@ -309,7 +312,7 @@ function updateFocus(text, sessions) {
   if (best) focus = best.id + " " + best.session;
 }
 function focusLine() {
-  return focus ? `\n\nCONVERSATION CONTEXT: the customer is currently asking about ${focus}. Short follow-ups like "how much is it?" refer to this session unless they name another.` : "";
+  return focus ? `\n\nCONVERSATION CONTEXT: the customer is currently asking about ${focus}. Short follow-ups like "how much is it?" refer to this session unless they name another. If the question is about something else entirely, ignore this context.` : "";
 }
 
 const chat = document.getElementById("chat");
@@ -560,7 +563,8 @@ async function ask(question) {
       ]})
     });
     if (!res.ok) throw new Error("brain " + res.status);
-    const { reply } = await res.json();
+    let { reply } = await res.json();
+    if (/^\W*OUT_OF_SCOPE\b/i.test(reply.trim())) reply = OUT_OF_SCOPE_REPLY;
     pending.className = "msg bot";
     pending.textContent = reply;
     history.push({ role: "user", content: question }, { role: "assistant", content: reply });
