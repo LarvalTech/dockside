@@ -29,7 +29,20 @@
   header h1 span { color:var(--sun); }
   header p { margin:0; opacity:.9; font-size:.95rem; }
   .scene { display:block; position:relative; z-index:1; width:100%; max-width:800px; margin:12px auto 0; height:auto; }
-  main { max-width:720px; margin:4px auto 0; padding:0 16px 16px; position:relative; z-index:1; }
+  main {
+    max-width:1200px; margin:4px auto 0; padding:0 16px 16px; position:relative; z-index:1;
+    display:grid; grid-template-columns:minmax(0, 1.5fr) minmax(320px, 1fr); gap:24px; align-items:start;
+  }
+  .chatbox {
+    position:sticky; top:16px; background:#fff; border-radius:22px; padding:18px;
+    box-shadow:0 10px 30px rgba(11,59,70,.14); border-top:5px solid var(--sun);
+  }
+  .chatbox h2 { margin:0 0 12px; font-size:1.2rem; color:var(--deep); }
+  @media (max-width:900px) {
+    main { grid-template-columns:minmax(0, 1fr); }
+    #guide-list { grid-template-columns:minmax(0, 1fr); }
+    .chatbox { position:static; order:-1; }
+  }
   #weather {
     position:relative; z-index:1; display:flex; width:fit-content; max-width:100%; align-items:center; gap:10px;
     margin:16px auto 0; padding:10px 18px; border-radius:999px; font-size:.9rem;
@@ -38,9 +51,11 @@
   }
   #weather::before { content:"🌤️"; font-size:1.3rem; }
   #chat {
-    background:#fff; border-radius:20px; padding:18px; min-height:300px; max-height:52vh; overflow-y:auto;
-    display:flex; flex-direction:column; gap:10px; box-shadow:0 10px 30px rgba(11,59,70,.12);
+    background:#f8fbfa; border:1px solid var(--line); border-radius:16px; padding:14px; min-height:260px;
+    max-height:max(260px, calc(100vh - 380px)); overflow-y:auto;
+    display:flex; flex-direction:column; gap:10px;
   }
+  #chat .bot { background:var(--mist); }
   .msg { max-width:86%; padding:10px 15px; border-radius:18px; line-height:1.5; white-space:pre-wrap; }
   .user { align-self:flex-end; background:linear-gradient(135deg, var(--teal), #0f6d77); color:#fff; border-bottom-right-radius:5px; }
   .bot { align-self:flex-start; background:var(--mist); border-bottom-left-radius:5px; }
@@ -64,14 +79,14 @@
   form button:hover:not(:disabled) { transform:translateY(-1px); }
   form button:disabled { opacity:.5; cursor:default; }
   .tip { text-align:center; font-size:.85rem; color:var(--teal); margin-top:14px; }
-  #guide { margin-top:34px; }
+  #guide { margin-top:6px; }
   .guide-head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
   .guide-head h2 { margin:0; font-size:1.4rem; letter-spacing:-.01em; color:var(--deep); }
   .live { font-size:.8rem; color:var(--teal); font-weight:600; }
   .live::before { content:""; display:inline-block; width:8px; height:8px; margin-right:6px; border-radius:50%; background:#22b573; animation:pulse 1.8s infinite; }
   @keyframes pulse { 50% { opacity:.3; } }
   .guide-note { font-size:.8rem; opacity:.7; margin:0 0 14px; }
-  #guide-list { display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); }
+  #guide-list { display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); }
   .act { background:#fff; border-radius:18px; padding:16px; box-shadow:0 8px 24px rgba(11,59,70,.1); display:flex; flex-direction:column; }
   .act-head { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
   .ico { width:46px; height:46px; display:grid; place-items:center; font-size:1.5rem; border-radius:14px; background:linear-gradient(135deg, var(--mist), #d2f1ec); }
@@ -178,6 +193,17 @@
   </svg>
 </header>
 <main>
+  <section id="guide">
+    <div class="guide-head">
+      <h2>Today at the dock</h2>
+      <span class="live" id="live">Loading…</span>
+    </div>
+    <p class="guide-note">Sessions run every day. Places left are for the next available session: today's if it hasn't started, otherwise tomorrow's. "Likely to go ahead" is an estimate from the hourly wind forecast; the dock team make the final call.</p>
+    <div id="guide-list"></div>
+  </section>
+
+  <aside class="chatbox">
+  <h2>Ask Dockside</h2>
   <div id="chat" aria-live="polite">
     <div class="msg bot">Hi there, welcome to Dockside! 👋 Ask me about today's prices, places left, or whether a session will go ahead in this wind.</div>
   </div>
@@ -192,15 +218,7 @@
     <button id="send">Ask</button>
   </form>
   <div class="tip">💡 Any special deals? Ask at the service desk.</div>
-
-  <section id="guide">
-    <div class="guide-head">
-      <h2>Today at the dock</h2>
-      <span class="live" id="live">Loading…</span>
-    </div>
-    <p class="guide-note">Sessions run every day. Places left are for the next available session: today's if it hasn't started, otherwise tomorrow's. "Likely to go ahead" is an estimate from the hourly wind forecast; the dock team make the final call.</p>
-    <div id="guide-list"></div>
-  </section>
+  </aside>
 </main>
 <footer>Dockside Paddle Co. is fictional. Data refreshes every time you ask.</footer>
 
