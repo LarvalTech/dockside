@@ -51,8 +51,10 @@
   #weather::before { content:"🌤️"; font-size:1.3rem; }
   .hdr-row { position:relative; z-index:1; display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:10px; margin-top:16px; }
   .hdr-row #weather { margin:0; }
-  .gt-btn { font-family:inherit; font-weight:700; font-size:.9rem; padding:10px 18px; border-radius:999px; border:0; cursor:pointer; background:var(--sun); color:var(--deep); transition:transform .15s; }
-  .gt-btn:hover { transform:translateY(-1px); }
+  .srow[data-session] { cursor:pointer; border-radius:10px; transition:background .15s; margin:0 -8px; padding-left:8px; padding-right:8px; }
+  .srow[data-session]:hover { background:var(--mist); }
+  .srow[data-session]:focus-visible { outline:3px solid var(--sun); }
+  .gt-hint { font-size:.75rem; font-weight:600; color:var(--teal); margin-top:5px; }
   dialog#gt { border:0; border-radius:20px; padding:20px; width:min(520px, calc(100vw - 32px)); color:var(--ink); font-family:inherit; text-align:left; box-shadow:0 20px 60px rgba(11,59,70,.35); }
   dialog#gt::backdrop { background:rgba(11,59,70,.55); }
   .gt-top { display:flex; justify-content:space-between; align-items:center; }
@@ -60,6 +62,11 @@
   #gt-close { all:unset; cursor:pointer; padding:6px 10px; border-radius:50%; font-size:1.1rem; }
   #gt-close:hover { background:var(--mist); }
   .gt-sub { font-size:.9rem; opacity:.8; margin:8px 0 12px; }
+  .gt-label { font-size:.8rem; font-weight:700; color:var(--teal); text-transform:uppercase; letter-spacing:.05em; margin:12px 0 6px; }
+  #gt-reco { margin-top:10px; background:linear-gradient(135deg, #fff7e6, #ffeccb); border-left:5px solid var(--sun); border-radius:12px; padding:12px 14px; font-size:.9rem; line-height:1.5; }
+  #gt-reco:empty { display:none; }
+  #gt-reco p { margin:0 0 6px; } #gt-reco p:last-child { margin:0; }
+  #gt-reco .big { font-size:1rem; }
   .gt-stop { background:var(--mist); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
   .gt-stop h3 { margin:0 0 2px; font-size:1rem; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .line-badge { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:#fff; padding:2px 8px; border-radius:99px; }
@@ -155,11 +162,12 @@
   <p>Today's sessions and the weather at the dock, live</p>
   <div class="hdr-row">
     <div id="weather">Loading the weather at the dock…</div>
-    <button type="button" id="gt-open" class="gt-btn">🚋 How to get there</button>
   </div>
   <dialog id="gt">
-    <div class="gt-top"><h2>Getting to Dockside</h2><button type="button" id="gt-close" aria-label="Close">✕</button></div>
-    <p class="gt-sub">Grand Canal Dock, Dublin · five minutes from NCI. Hop off the Luas at George's Dock, right beside the activities. Next trams, live:</p>
+    <div class="gt-top"><h2>Getting there on time</h2><button type="button" id="gt-close" aria-label="Close">✕</button></div>
+    <p class="gt-sub">Hop off the Luas at George's Dock, right beside the activities. We suggest arriving 15 minutes before your session.</p>
+    <div id="gt-reco" aria-live="polite"></div>
+    <div class="gt-label">Next trams at George's Dock</div>
     <div id="gt-body">Loading…</div>
     <a class="gt-maps" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=53.349528,-6.247575&travelmode=transit">Get directions to George's Dock in Google Maps ↗</a>
     <p class="gt-foot">Luas data: Transport Infrastructure Ireland, via the BDAIB class relay.</p>
@@ -464,12 +472,13 @@ function renderGuide() {
         bar = `<div class="bar" title="Estimate from the wind forecast"><i class="${g.pct >= 80 ? "hi" : g.pct >= 50 ? "mid" : "lo"}" style="width:${g.pct}%"></i></div>`;
       } else chance = "Forecast unavailable";
       if (run.status === "underway") chance = "Today's is under way · " + chance;
-      return `<div class="srow">
+      return `<div class="srow" data-session="${esc(s.id)}" role="button" tabindex="0" title="Getting there on time">
         <div class="stime">${esc(s.start_time)}<small>${run.day ? "Tomorrow" : "Today"}</small></div>
         <div class="smain">
           <div class="sline"><span>${esc(s.session)}</span><span class="price">€${esc(s.price_eur)}</span></div>
           <div class="meta">${placesPill(s.slots_left)}<span class="chance">${esc(chance)}</span></div>
           ${bar}
+          <div class="gt-hint">🚋 Getting there on time ›</div>
         </div></div>`;
     }).join("");
     const open = openActs.has(act);
@@ -499,7 +508,13 @@ function renderGuide() {
   }).join("");
 }
 
+document.getElementById("guide-list").addEventListener("keydown", e => {
+  const row = e.target.closest(".srow[data-session]");
+  if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openGetThere(row.dataset.session); }
+});
 document.getElementById("guide-list").addEventListener("click", e => {
+  const row = e.target.closest(".srow[data-session]");
+  if (row) { openGetThere(row.dataset.session); return; }
   const card = e.target.closest(".act");
   if (!card) return;
   const act = card.dataset.act;
@@ -577,12 +592,57 @@ let gtTimer = null;
 
 const dueText = d => (d === 0 || String(d).toUpperCase() === "DUE") ? "Due" : `${d} min`;
 
+const ARRIVE_EARLY_MIN = 15;
+const gtReco = document.getElementById("gt-reco");
+let gtData = null, gtSessionId = null;
+const fmtMin = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+// Recommends the tram reaching George's Dock in good time: the latest listed tram
+// that arrives no later than 15 minutes before the session starts.
+function renderReco() {
+  const s = snap?.sessions.find(x => x.id === gtSessionId);
+  if (!s || !gtData) { gtReco.innerHTML = ""; return; }
+  const run = nextRun(s, snap.w);
+  const start = toMin(s.start_time), arriveBy = start - ARRIVE_EARLY_MIN;
+  const head = `<p><b>${esc(s.session)}</b> starts ${run.label} at <b>${esc(s.start_time)}</b>. Plan to be at George's Dock by <b>${fmtMin(arriveBy)}</b>.</p>`;
+  if (run.day) {
+    gtReco.innerHTML = head + `<p>Live tram times only cover the next little while, so check back before you set off tomorrow.</p>`;
+    return;
+  }
+  const nowMin = toMin(gtData.created.split("T")[1].slice(0, 5));
+  const trams = gtData.directions.flatMap(d => d.trams.map(t => {
+    const due = t.due === "DUE" ? 0 : (Number(t.due) || 0);
+    return { dir: d.name, dest: t.destination, due, arrive: nowMin + due };
+  })).sort((a, b) => a.arrive - b.arrive);
+  const desc = t => `the <b>${esc(t.dir)}</b> tram to <b>${esc(t.dest)}</b>, reaching George's Dock at <b>${fmtMin(t.arrive)}</b> (${t.due === 0 ? "due now" : `in ${t.due} min`})`;
+  if (!trams.length) {
+    gtReco.innerHTML = head + `<p>No trams are listed right now, so leave extra time or check the directions link below.</p>`;
+    return;
+  }
+  const good = trams.filter(t => t.arrive <= arriveBy);
+  const horizon = trams[trams.length - 1].arrive;
+  let body;
+  if (good.length) {
+    const best = good[good.length - 1], spare = arriveBy - best.arrive;
+    body = `<p class="big">🚋 Catch ${desc(best)}. That's ${spare} min before you need to be there.</p>`;
+    const next = trams.find(t => t.arrive > best.arrive);
+    if (next) body += `<p>Miss it? The next one reaches George's Dock at ${fmtMin(next.arrive)}${next.arrive <= start ? ", still before your session starts but after the recommended time" : ", after your session starts"}.</p>`;
+    if (horizon < arriveBy - 5) body += `<p>Live times only run until ${fmtMin(horizon)} so far, so check back closer to the time for a later tram.</p>`;
+  } else {
+    const first = trams[0];
+    body = `<p>No listed tram reaches George's Dock by ${fmtMin(arriveBy)}. The next is ${desc(first)}${first.arrive <= start ? ", which is before your session starts but later than the recommended time." : ", which is after your session starts."}</p>`;
+  }
+  gtReco.innerHTML = head + body;
+}
+
 async function loadGetThere() {
   try {
     const [sr, fr] = await Promise.all([fetch(`${LUAS_URL}/stops`), fetch(`${LUAS_URL}/forecast?stop=${LUAS_STOP}`)]);
     if (!sr.ok || !fr.ok) throw new Error("luas relay");
     const stop = (await sr.json()).stops.find(s => s.id === LUAS_STOP);
     const f = await fr.json();
+    gtData = f;
+    renderReco();
     const line = stop?.line ?? "red";
     const dirs = f.directions.map(d => `<div class="gt-dir"><b>${esc(d.name)}</b>${
       d.trams.length ? d.trams.slice(0, 3).map(t => `<span>${esc(t.destination)} · ${esc(dueText(t.due))}</span>`).join("") : "<span>No trams listed</span>"}</div>`).join("");
@@ -592,14 +652,19 @@ async function loadGetThere() {
   } catch (e) {
     console.error(e);
     gtBody.textContent = "Live Luas times aren't available right now. Use the directions link below.";
+    gtReco.innerHTML = "";
   }
 }
-document.getElementById("gt-open").addEventListener("click", () => {
-  gt.showModal();
+function openGetThere(sessionId) {
+  gtSessionId = sessionId;
+  gtData = null;
+  gtReco.innerHTML = "";
   gtBody.textContent = "Loading…";
+  gt.showModal();
   loadGetThere();
+  clearInterval(gtTimer);
   gtTimer = setInterval(loadGetThere, 30000);
-});
+}
 gt.addEventListener("close", () => clearInterval(gtTimer));
 document.getElementById("gt-close").addEventListener("click", () => gt.close());
 gt.addEventListener("click", e => { if (e.target === gt) gt.close(); });
