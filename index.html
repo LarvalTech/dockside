@@ -159,10 +159,10 @@
   </div>
   <dialog id="gt">
     <div class="gt-top"><h2>Getting to Dockside</h2><button type="button" id="gt-close" aria-label="Close">✕</button></div>
-    <p class="gt-sub">Grand Canal Dock, Dublin · five minutes from NCI. The nearest Luas stops and their next trams, live:</p>
+    <p class="gt-sub">Grand Canal Dock, Dublin · five minutes from NCI. Hop off the Luas at George's Dock, right beside the activities. Next trams, live:</p>
     <div id="gt-body">Loading…</div>
-    <a class="gt-maps" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=53.3441,-6.2386&travelmode=transit">Get directions in Google Maps ↗</a>
-    <p class="gt-foot">Luas data: Transport Infrastructure Ireland, via the BDAIB class relay. Walking times are estimates.</p>
+    <a class="gt-maps" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=53.349528,-6.247575&travelmode=transit">Get directions to George's Dock in Google Maps ↗</a>
+    <p class="gt-foot">Luas data: Transport Infrastructure Ireland, via the BDAIB class relay.</p>
   </dialog>
   <svg class="scene" viewBox="0 0 800 130" role="img" aria-label="Silhouettes of a kayaker, a paddleboarder, a dragon boat and a night paddle under the moon">
     <defs><clipPath id="nightClip"><rect x="610" y="6" width="184" height="118" rx="18"/></clipPath></defs>
@@ -569,35 +569,26 @@ form.addEventListener("submit", e => {
   ask(q);
 });
 document.querySelectorAll(".chips button").forEach(b => b.addEventListener("click", () => ask(b.textContent)));
-// How to get there: nearest Luas stops to the dock and their next trams (class relay)
+// How to get there: next trams at George's Dock, the Luas stop beside the dock (class relay)
 const LUAS_URL = "https://luas-class.kluxy.app";
-const DOCK = { lat: 53.3441, lng: -6.2386 };
+const LUAS_STOP = "GDK";
 const gt = document.getElementById("gt"), gtBody = document.getElementById("gt-body");
 let gtTimer = null;
 
-function metresFromDock(s) {
-  const dy = (s.lat - DOCK.lat) * 111320;
-  const dx = (s.lng - DOCK.lng) * 111320 * Math.cos(DOCK.lat * Math.PI / 180);
-  return Math.hypot(dx, dy);
-}
 const dueText = d => (d === 0 || String(d).toUpperCase() === "DUE") ? "Due" : `${d} min`;
 
 async function loadGetThere() {
   try {
-    const r = await fetch(`${LUAS_URL}/stops`);
-    if (!r.ok) throw new Error("stops " + r.status);
-    const stops = (await r.json()).stops;
-    const near = stops.sort((a, b) => metresFromDock(a) - metresFromDock(b)).slice(0, 2);
-    const fcs = await Promise.all(near.map(s =>
-      fetch(`${LUAS_URL}/forecast?stop=${encodeURIComponent(s.id)}`).then(x => { if (!x.ok) throw new Error("forecast"); return x.json(); })));
-    gtBody.innerHTML = near.map((s, i) => {
-      const f = fcs[i], walk = Math.max(1, Math.round(metresFromDock(s) * 1.3 / 80));
-      const dirs = f.directions.map(d => `<div class="gt-dir"><b>${esc(d.name)}</b>${
-        d.trams.length ? d.trams.slice(0, 3).map(t => `<span>${esc(t.destination)} · ${esc(dueText(t.due))}</span>`).join("") : "<span>No trams listed</span>"}</div>`).join("");
-      return `<div class="gt-stop"><h3>${esc(s.name)} <span class="line-badge ${esc(s.line)}">${esc(s.line)} line</span></h3>
-        <div class="gt-walk">About ${walk} min walk to the dock</div>
-        ${f.message ? `<div class="gt-notice">${esc(f.message)}</div>` : ""}${dirs}</div>`;
-    }).join("");
+    const [sr, fr] = await Promise.all([fetch(`${LUAS_URL}/stops`), fetch(`${LUAS_URL}/forecast?stop=${LUAS_STOP}`)]);
+    if (!sr.ok || !fr.ok) throw new Error("luas relay");
+    const stop = (await sr.json()).stops.find(s => s.id === LUAS_STOP);
+    const f = await fr.json();
+    const line = stop?.line ?? "red";
+    const dirs = f.directions.map(d => `<div class="gt-dir"><b>${esc(d.name)}</b>${
+      d.trams.length ? d.trams.slice(0, 3).map(t => `<span>${esc(t.destination)} · ${esc(dueText(t.due))}</span>`).join("") : "<span>No trams listed</span>"}</div>`).join("");
+    gtBody.innerHTML = `<div class="gt-stop"><h3>${esc(f.stopName || "George's Dock")} <span class="line-badge ${esc(line)}">${esc(line)} line</span></h3>
+      <div class="gt-walk">The Luas stop beside the dock activities</div>
+      ${f.message ? `<div class="gt-notice">${esc(f.message)}</div>` : ""}${dirs}</div>`;
   } catch (e) {
     console.error(e);
     gtBody.textContent = "Live Luas times aren't available right now. Use the directions link below.";
