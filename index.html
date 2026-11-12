@@ -168,6 +168,7 @@ const DEAL_HINT = "A special deal may be available, ask at the service desk";
 const SYSTEM = `You are Ask Dockside, the warm, friendly customer assistant for Dockside Paddle Co. at Grand Canal Dock, Dublin.
 Answer ONLY from the TODAY'S SESSIONS and WEATHER data in the user message. Never answer from memory or guess. If the data does not contain the answer, say you don't know and suggest asking staff at the service desk.
 Tone: upbeat, welcoming and concise, like a helpful member of the dock team. Use at most one emoji per reply.
+Conversation: earlier messages are the customer's previous questions and your replies. Use them to understand follow-ups (e.g. "how much is it?" or "what about the wind?" refers to the session just discussed; if several were discussed or it is unclear, ask which one). Earlier replies may be out of date, so always take prices, places, times and weather from the data in the LATEST user message only.
 Rules:
 - Prices are in euro, exactly as in the data. Never invent discounts, free sessions or offers, and never say anything is free or cheaper than the listed price. Only mention a specific discount if the notes column of that session states it as a fact (e.g. a student price), quoting it as written.
 - Special deals: only mention the service desk and possible special deals when the session being discussed has notes saying "${DEAL_HINT}", or when the customer asks about deals, offers or discounts. In that case say, in friendly words, that a special deal may be available and it's worth asking at the service desk, and still quote the listed price. Do not promise any deal exists. Do not bring up deals for other sessions or in other replies. Once per reply is enough.
@@ -175,6 +176,27 @@ Rules:
 - Places: slots_left is the number of places left. 0 means fully booked (mention the waiting list if the notes say so). Mention if only 1 or 2 are left.
 - Weather: each session has a max_wind_kmh limit. Use the WIND CHECK value already computed for each session: OK means wind and gusts are within the limit, CAUTION means gusts exceed the limit while sustained wind is within it (may be affected, staff decide), NO means sustained wind exceeds the limit. Quote current wind and gust speeds in km/h.
 - Mention the "updated" time when talking about availability, since places change every 5 minutes.`;
+
+// The brain has no memory, so we resend recent turns (questions and replies only,
+// never old data) with each request. Cleared on page refresh.
+const history = [];
+const MAX_HISTORY = 12;
+
+// Tracks which session was talked about last, so short follow-ups like
+// "how much is it?" are understood.
+let focus = null;
+function updateFocus(text, sessions) {
+  const t = text.toLowerCase();
+  let best = null, pos = -1;
+  for (const s of sessions) {
+    const p = Math.max(t.lastIndexOf(s.session.toLowerCase()), t.lastIndexOf(s.id.toLowerCase()));
+    if (p > pos) { pos = p; best = s; }
+  }
+  if (best) focus = best.id + " " + best.session;
+}
+function focusLine() {
+  return focus ? `\n\nCONVERSATION CONTEXT: the customer is currently asking about ${focus}. Short follow-ups like "how much is it?" refer to this session unless they name another.` : "";
+}
 
 const chat = document.getElementById("chat");
 const form = document.getElementById("form");
@@ -263,13 +285,17 @@ async function ask(question) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ messages: [
         { role: "system", content: SYSTEM },
-        { role: "user", content: `${buildData(sessions, w)}\n\nCUSTOMER QUESTION: ${question}` }
+        ...history,
+        { role: "user", content: `${buildData(sessions, w)}${focusLine()}\n\nCUSTOMER QUESTION: ${question}` }
       ]})
     });
     if (!res.ok) throw new Error("brain " + res.status);
     const { reply } = await res.json();
     pending.className = "msg bot";
     pending.textContent = reply;
+    history.push({ role: "user", content: question }, { role: "assistant", content: reply });
+    updateFocus(`${question} ${reply}`, sessions);
+    if (history.length > MAX_HISTORY) history.splice(0, history.length - MAX_HISTORY);
   } catch (e) {
     pending.className = "msg bot";
     pending.textContent = "Sorry, I couldn't get today's live data just now. Please ask at the service desk or try again in a moment.";
