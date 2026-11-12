@@ -40,7 +40,6 @@
   .chatbox h2 { margin:0 0 12px; font-size:1.2rem; color:var(--deep); }
   @media (max-width:900px) {
     main { grid-template-columns:minmax(0, 1fr); }
-    #guide-list { grid-template-columns:minmax(0, 1fr); }
     .chatbox { position:static; order:-1; }
   }
   #weather {
@@ -86,12 +85,20 @@
   .live::before { content:""; display:inline-block; width:8px; height:8px; margin-right:6px; border-radius:50%; background:#22b573; animation:pulse 1.8s infinite; }
   @keyframes pulse { 50% { opacity:.3; } }
   .guide-note { font-size:.8rem; opacity:.7; margin:0 0 14px; }
-  #guide-list { display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(270px, 1fr)); }
-  .act { background:#fff; border-radius:18px; padding:16px; box-shadow:0 8px 24px rgba(11,59,70,.1); display:flex; flex-direction:column; }
-  .act-head { display:flex; align-items:center; gap:12px; margin-bottom:8px; }
+  #guide-list { display:flex; flex-direction:column; gap:10px; }
+  .act { background:#fff; border-radius:18px; box-shadow:0 6px 18px rgba(11,59,70,.09); overflow:hidden; border:2px solid transparent; transition:border-color .15s; }
+  .act.expanded { border-color:var(--aqua); }
+  .acc-head { all:unset; box-sizing:border-box; width:100%; display:flex; align-items:center; gap:14px; padding:12px 16px; cursor:pointer; }
+  .acc-head:hover { background:var(--mist); }
+  .acc-head:focus-visible { outline:3px solid var(--sun); outline-offset:-3px; }
+  .acc-title { flex:1; min-width:0; }
+  .acc-price { font-weight:700; color:var(--deep); white-space:nowrap; }
+  .chev { color:var(--teal); font-size:1.3rem; transition:transform .2s; }
+  .act.expanded .chev { transform:rotate(180deg); }
+  .acc-body { padding:0 16px 16px; }
   .ico { width:46px; height:46px; display:grid; place-items:center; font-size:1.5rem; border-radius:14px; background:linear-gradient(135deg, var(--mist), #d2f1ec); }
-  .act-head h3 { margin:0; font-size:1.1rem; }
-  .act-head small { opacity:.65; }
+  .acc-title h3 { margin:0; font-size:1.1rem; }
+  .acc-title small { opacity:.65; }
   .srow { display:flex; gap:12px; padding:10px 0; border-top:1px solid var(--line); }
   .stime { font-weight:700; color:var(--teal); min-width:62px; font-variant-numeric:tabular-nums; }
   .stime small { display:block; font-size:.68rem; font-weight:600; text-transform:uppercase; letter-spacing:.05em; opacity:.7; }
@@ -397,6 +404,7 @@ function add(text, cls) {
 const esc = v => String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const ICONS = { "Paddleboard": "🏄", "Kayak": "🛶", "Swim": "🏊", "Dragon boat": "🐉", "Wakeboard": "🌊", "Sauna": "🧖" };
 const openActs = new Set();
+const expandedActs = new Set();
 let snap = null;
 
 function placesPill(n) {
@@ -437,15 +445,24 @@ function renderGuide() {
       const g = goAhead(s, w, fc);
       return `<p><b>${esc(s.session)}</b> (${nextRun(s, w).label} ${esc(s.start_time)}) · ${esc(s.duration_min)} min · wind limit ${esc(s.max_wind_kmh)} km/h${g ? ` · forecast wind up to ${g.wind} km/h, gusts ${g.gust} km/h` : ""}<br>${esc(cleanNotes(s.notes))}</p>`;
     }).join("");
-    return `<article class="act" data-act="${esc(act)}">
-      <div class="act-head"><div class="ico">${ICONS[act] || "🌊"}</div>
-        <div><h3>${esc(act)}</h3><small>from €${cheapest} · ${list.length} session${list.length > 1 ? "s" : ""} daily</small></div></div>
-      ${rows}
-      <div class="act-actions">
-        <button type="button" class="btn-more" data-more aria-expanded="${open}">${open ? "Hide info" : "More info"}</button>
-        <button type="button" class="btn-ask" data-ask>Ask Dockside</button>
+    const priciest = Math.max(...list.map(s => Number(s.price_eur)));
+    const price = cheapest === priciest ? `€${cheapest}` : `from €${cheapest}`;
+    const expanded = expandedActs.has(act);
+    return `<article class="act ${expanded ? "expanded" : ""}" data-act="${esc(act)}">
+      <button type="button" class="acc-head" data-toggle aria-expanded="${expanded}">
+        <span class="ico">${ICONS[act] || "🌊"}</span>
+        <span class="acc-title"><h3>${esc(act)}</h3><small>${list.length} session${list.length > 1 ? "s" : ""} daily</small></span>
+        <span class="acc-price">${price}</span>
+        <span class="chev" aria-hidden="true">▾</span>
+      </button>
+      <div class="acc-body" ${expanded ? "" : "hidden"}>
+        ${rows}
+        <div class="act-actions">
+          <button type="button" class="btn-more" data-more aria-expanded="${open}">${open ? "Hide info" : "More info"}</button>
+          <button type="button" class="btn-ask" data-ask>Ask Dockside</button>
+        </div>
+        <div class="more" ${open ? "" : "hidden"}>${more}</div>
       </div>
-      <div class="more" ${open ? "" : "hidden"}>${more}</div>
     </article>`;
   }).join("");
 }
@@ -454,7 +471,10 @@ document.getElementById("guide-list").addEventListener("click", e => {
   const card = e.target.closest(".act");
   if (!card) return;
   const act = card.dataset.act;
-  if (e.target.closest("[data-more]")) {
+  if (e.target.closest("[data-toggle]")) {
+    expandedActs.has(act) ? expandedActs.delete(act) : expandedActs.add(act);
+    renderGuide();
+  } else if (e.target.closest("[data-more]")) {
     openActs.has(act) ? openActs.delete(act) : openActs.add(act);
     renderGuide();
   } else if (e.target.closest("[data-ask]") && !send.disabled) {
