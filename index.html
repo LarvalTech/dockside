@@ -49,6 +49,28 @@
     -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px);
   }
   #weather::before { content:"🌤️"; font-size:1.3rem; }
+  .hdr-row { position:relative; z-index:1; display:flex; justify-content:center; align-items:center; flex-wrap:wrap; gap:10px; margin-top:16px; }
+  .hdr-row #weather { margin:0; }
+  .gt-btn { font-family:inherit; font-weight:700; font-size:.9rem; padding:10px 18px; border-radius:999px; border:0; cursor:pointer; background:var(--sun); color:var(--deep); transition:transform .15s; }
+  .gt-btn:hover { transform:translateY(-1px); }
+  dialog#gt { border:0; border-radius:20px; padding:20px; width:min(520px, calc(100vw - 32px)); color:var(--ink); font-family:inherit; text-align:left; box-shadow:0 20px 60px rgba(11,59,70,.35); }
+  dialog#gt::backdrop { background:rgba(11,59,70,.55); }
+  .gt-top { display:flex; justify-content:space-between; align-items:center; }
+  .gt-top h2 { margin:0; font-size:1.3rem; color:var(--deep); }
+  #gt-close { all:unset; cursor:pointer; padding:6px 10px; border-radius:50%; font-size:1.1rem; }
+  #gt-close:hover { background:var(--mist); }
+  .gt-sub { font-size:.9rem; opacity:.8; margin:8px 0 12px; }
+  .gt-stop { background:var(--mist); border-radius:14px; padding:12px 14px; margin-bottom:10px; }
+  .gt-stop h3 { margin:0 0 2px; font-size:1rem; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .line-badge { font-size:.7rem; text-transform:uppercase; letter-spacing:.05em; color:#fff; padding:2px 8px; border-radius:99px; }
+  .line-badge.red { background:#d4373b; } .line-badge.green { background:#1f9d55; }
+  .gt-walk { font-size:.8rem; opacity:.75; margin-bottom:8px; }
+  .gt-notice { background:#fff0d6; color:#7a4a08; border-radius:10px; padding:8px 10px; font-size:.82rem; margin-bottom:8px; }
+  .gt-dir { font-size:.85rem; margin-top:6px; }
+  .gt-dir b { display:block; }
+  .gt-dir span { display:inline-block; margin:2px 8px 0 0; background:#fff; border-radius:99px; padding:2px 10px; }
+  .gt-maps { display:block; text-align:center; text-decoration:none; font-weight:700; background:var(--teal); color:#fff; padding:12px; border-radius:999px; margin-top:6px; }
+  .gt-foot { font-size:.72rem; opacity:.6; margin:10px 0 0; text-align:center; }
   #chat {
     background:#f8fbfa; border:1px solid var(--line); border-radius:16px; padding:14px; min-height:260px;
     max-height:max(260px, calc(100vh - 380px)); overflow-y:auto;
@@ -131,7 +153,17 @@
   <div class="tag">Grand Canal Dock &middot; Dublin</div>
   <h1>Ask <span>Dockside</span></h1>
   <p>Today's sessions and the weather at the dock, live</p>
-  <div id="weather">Loading the weather at the dock…</div>
+  <div class="hdr-row">
+    <div id="weather">Loading the weather at the dock…</div>
+    <button type="button" id="gt-open" class="gt-btn">🚋 How to get there</button>
+  </div>
+  <dialog id="gt">
+    <div class="gt-top"><h2>Getting to Dockside</h2><button type="button" id="gt-close" aria-label="Close">✕</button></div>
+    <p class="gt-sub">Grand Canal Dock, Dublin · five minutes from NCI. The nearest Luas stops and their next trams, live:</p>
+    <div id="gt-body">Loading…</div>
+    <a class="gt-maps" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=53.3441,-6.2386&travelmode=transit">Get directions in Google Maps ↗</a>
+    <p class="gt-foot">Luas data: Transport Infrastructure Ireland, via the BDAIB class relay. Walking times are estimates.</p>
+  </dialog>
   <svg class="scene" viewBox="0 0 800 130" role="img" aria-label="Silhouettes of a kayaker, a paddleboarder, a dragon boat and a night paddle under the moon">
     <defs><clipPath id="nightClip"><rect x="610" y="6" width="184" height="118" rx="18"/></clipPath></defs>
 
@@ -537,6 +569,50 @@ form.addEventListener("submit", e => {
   ask(q);
 });
 document.querySelectorAll(".chips button").forEach(b => b.addEventListener("click", () => ask(b.textContent)));
+// How to get there: nearest Luas stops to the dock and their next trams (class relay)
+const LUAS_URL = "https://luas-class.kluxy.app";
+const DOCK = { lat: 53.3441, lng: -6.2386 };
+const gt = document.getElementById("gt"), gtBody = document.getElementById("gt-body");
+let gtTimer = null;
+
+function metresFromDock(s) {
+  const dy = (s.lat - DOCK.lat) * 111320;
+  const dx = (s.lng - DOCK.lng) * 111320 * Math.cos(DOCK.lat * Math.PI / 180);
+  return Math.hypot(dx, dy);
+}
+const dueText = d => (d === 0 || String(d).toUpperCase() === "DUE") ? "Due" : `${d} min`;
+
+async function loadGetThere() {
+  try {
+    const r = await fetch(`${LUAS_URL}/stops`);
+    if (!r.ok) throw new Error("stops " + r.status);
+    const stops = (await r.json()).stops;
+    const near = stops.sort((a, b) => metresFromDock(a) - metresFromDock(b)).slice(0, 2);
+    const fcs = await Promise.all(near.map(s =>
+      fetch(`${LUAS_URL}/forecast?stop=${encodeURIComponent(s.id)}`).then(x => { if (!x.ok) throw new Error("forecast"); return x.json(); })));
+    gtBody.innerHTML = near.map((s, i) => {
+      const f = fcs[i], walk = Math.max(1, Math.round(metresFromDock(s) * 1.3 / 80));
+      const dirs = f.directions.map(d => `<div class="gt-dir"><b>${esc(d.name)}</b>${
+        d.trams.length ? d.trams.slice(0, 3).map(t => `<span>${esc(t.destination)} · ${esc(dueText(t.due))}</span>`).join("") : "<span>No trams listed</span>"}</div>`).join("");
+      return `<div class="gt-stop"><h3>${esc(s.name)} <span class="line-badge ${esc(s.line)}">${esc(s.line)} line</span></h3>
+        <div class="gt-walk">About ${walk} min walk to the dock</div>
+        ${f.message ? `<div class="gt-notice">${esc(f.message)}</div>` : ""}${dirs}</div>`;
+    }).join("");
+  } catch (e) {
+    console.error(e);
+    gtBody.textContent = "Live Luas times aren't available right now. Use the directions link below.";
+  }
+}
+document.getElementById("gt-open").addEventListener("click", () => {
+  gt.showModal();
+  gtBody.textContent = "Loading…";
+  loadGetThere();
+  gtTimer = setInterval(loadGetThere, 30000);
+});
+gt.addEventListener("close", () => clearInterval(gtTimer));
+document.getElementById("gt-close").addEventListener("click", () => gt.close());
+gt.addEventListener("click", e => { if (e.target === gt) gt.close(); });
+
 refresh();
 setInterval(refresh, 60000);
 </script>
